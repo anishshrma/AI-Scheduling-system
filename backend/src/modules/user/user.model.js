@@ -1,0 +1,2 @@
+googleAccessToken: String,
+googleRefreshToken: String,
