@@ -17,7 +17,7 @@ exports.fetchEmails = async (authClient) => {
         // =========================
         const res = await gmail.users.messages.list({
             userId: "me",
-            maxResults: 30,
+            maxResults: 100,
             // 🔥 removed strict filter
         });
 
