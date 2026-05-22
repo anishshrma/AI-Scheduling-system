@@ -3,14 +3,28 @@ const taskService = require('./tasks.service');
 // CREATE
 exports.createTask = async (req, res) => {
     try {
+        console.log("=== CREATE TASK PROCESS ===");
+        console.log("Authenticated User:", req.user);
+        console.log("Request Payload:", req.body);
+
+        const userId = req.user?.id || req.user?._id;
+        if (!userId) {
+            return res.status(400).json({ error: "User identity could not be verified from token" });
+        }
+
+        if (!req.body.title || !req.body.title.trim()) {
+            return res.status(400).json({ error: "Task title is required" });
+        }
+
         const task = await taskService.createTask({
             ...req.body,
-            user: req.user.id
+            user: userId
         });
 
         res.json({ success: true, task });
 
     } catch (err) {
+        console.error("❌ CREATE TASK ERROR:", err);
         res.status(500).json({ error: err.message });
     }
 };
