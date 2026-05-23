@@ -202,8 +202,8 @@ router.get("/callback", async (req, res) => {
         // =====================================
         const redirectURL =
             state === "web"
-                ? process.env.WEB_CLIENT_URL
-                : process.env.CLIENT_URL;
+                ? (process.env.WEB_CLIENT_URL || "http://localhost:8081")
+                : (process.env.CLIENT_URL || "smartnudgeapp://auth/success");
 
         console.log(
             "🔁 REDIRECT URL:",
