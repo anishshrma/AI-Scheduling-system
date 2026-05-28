@@ -180,51 +180,53 @@ const extractSyllabusTopics = (syllabusText, customNeeds) => {
 // =====================================
 // 🧠 SPECIALIZED SMART PROMPT BUILDER
 // =====================================
-const buildSmartSchedulePrompt = (syllabusText, customNeeds, todayStr, targetDateStr) => {
-    return `Generate a customized study schedule.
+// =====================================
+// 🧠 SPECIALIZED SMART PROMPT BUILDER
+// =====================================
+const buildSmartSchedulePrompt = (syllabusText, customNeeds, startDateStr, endDateStr, totalDays) => {
+    return `Given this syllabus content:
+${syllabusText.slice(0, 1500)}
 
-Syllabus Context:
-${syllabusText.slice(0, 1000)}
+Student note: ${customNeeds}
+Study window: ${startDateStr} to ${endDateStr || "N/A"}, ${totalDays} days
 
-User Request:
-${customNeeds}
-
-Temporal Context:
-- Today is: ${todayStr}
-- Target deadline/exam date is: ${targetDateStr || "N/A"}
-
-Rules:
-- Output exactly 3 study steps.
-- DO NOT repeat the user's specific request query text in the Step tasks. Instead, extract actual topics/skills from the Syllabus Context.
-- Distribute the dates of the steps logically between ${todayStr} and ${targetDateStr}. Output them in YYYY-MM-DD format.
-- Set time shifts:
-  * Step 1: Morning Shift (e.g. 09:00 AM - 11:00 AM)
-  * Step 2: Afternoon Shift (e.g. 02:00 PM - 04:00 PM)
-  * Step 3: Evening/Night Shift (e.g. 07:00 PM - 09:00 PM)
+Generate a 3-step study schedule. For each step output:
+- Date (YYYY-MM-DD)
+- Time slot (Morning 9AM / Afternoon 2PM / Evening 7PM)
+- Topic name from the syllabus
+- 3 specific questions the student must be able to answer after this step
 
 STRICT Output Format:
-Title: [Title]
-Description: [Description]
-Category: Exam
-Priority: High
-Step1_Date: [Date]
+Title: [Plan Title]
+Description: [Plan Description]
+Step1_Date: [Date in YYYY-MM-DD format]
 Step1_Start: 09:00 AM
 Step1_End: 11:00 AM
-Step1_Task: [Step 1 study task]
-Step2_Date: [Date]
+Step1_Task: [Topic name from the syllabus]
+Step1_Q1: [Question 1]
+Step1_Q2: [Question 2]
+Step1_Q3: [Question 3]
+Step2_Date: [Date in YYYY-MM-DD format]
 Step2_Start: 02:00 PM
 Step2_End: 04:00 PM
-Step2_Task: [Step 2 study task]
-Step3_Date: [Date]
+Step2_Task: [Topic name from the syllabus]
+Step2_Q1: [Question 1]
+Step2_Q2: [Question 2]
+Step2_Q3: [Question 3]
+Step3_Date: [Date in YYYY-MM-DD format]
 Step3_Start: 07:00 PM
 Step3_End: 09:00 PM
-Step3_Task: [Step 3 study task]
+Step3_Task: [Topic name from the syllabus]
+Step3_Q1: [Question 1]
+Step3_Q2: [Question 2]
+Step3_Q3: [Question 3]
 `;
 };
 
 exports.analyzeSchedule = async (req, res) => {
     try {
         let extractedText = "";
+        let imageOcrText = "";
 
         if (req.files && req.files.document) {
             const fileBuffer = fs.readFileSync(req.files.document[0].path);
@@ -234,7 +236,15 @@ exports.analyzeSchedule = async (req, res) => {
 
         if (req.files && req.files.image) {
             const result = await Tesseract.recognize(req.files.image[0].path, "eng");
-            extractedText += result.data.text;
+            imageOcrText = result.data.text;
+            extractedText += imageOcrText;
+        }
+
+        // =====================================
+        // ⚠️ OCR EMPTY VALIDATION
+        // =====================================
+        if (req.files && req.files.image && !imageOcrText.trim()) {
+            return res.status(400).json({ error: "Could not read text from image — please upload a clearer photo or PDF." });
         }
 
         extractedText += req.body.event || "";
@@ -246,6 +256,12 @@ exports.analyzeSchedule = async (req, res) => {
         const todayStr = new Date().toISOString().split("T")[0];
         const targetDateStr = targetDate ? targetDate.toISOString().split("T")[0] : "";
 
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const target = targetDate || new Date(today.getTime() + 86400000 * 3);
+        const diffTime = Math.abs(target - today);
+        const totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 3;
+
         // =====================================
         // 🔥 QUERY HUGGINGFACE TRANSFORMER
         // =====================================
@@ -254,7 +270,7 @@ exports.analyzeSchedule = async (req, res) => {
                 throw new Error("T5_API_URL not configured");
             }
 
-            const prompt = buildSmartSchedulePrompt(extractedText, customNeeds, todayStr, targetDateStr);
+            const prompt = buildSmartSchedulePrompt(extractedText, customNeeds, todayStr, targetDateStr, totalDays);
             const aiResponse = await axios.post(
                 process.env.T5_API_URL,
                 { inputs: prompt },
@@ -310,6 +326,12 @@ exports.analyzeSchedule = async (req, res) => {
                 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
                 const stepDate = dateRegex.test(dateVal.trim()) ? dateVal.trim() : (distributedDates[stepIdx - 1] || "");
 
+                // Parse questions
+                const questions = [];
+                if (data[`Step${stepIdx}_Q1`]) questions.push(data[`Step${stepIdx}_Q1`]);
+                if (data[`Step${stepIdx}_Q2`]) questions.push(data[`Step${stepIdx}_Q2`]);
+                if (data[`Step${stepIdx}_Q3`]) questions.push(data[`Step${stepIdx}_Q3`]);
+
                 steps.push({
                     date: stepDate,
                     sh: startParts[0] ? startParts[0].trim() : defaultShift.sh,
@@ -318,7 +340,8 @@ exports.analyzeSchedule = async (req, res) => {
                     eh: endParts[0] ? endParts[0].trim() : defaultShift.eh,
                     em: endMinuteSplit[0] ? endMinuteSplit[0].trim() : defaultShift.em,
                     eap: endMinuteSplit[1] ? endMinuteSplit[1].trim() : defaultShift.eap,
-                    work: data[`Step${stepIdx}_Task`] || ""
+                    work: data[`Step${stepIdx}_Task`] || "",
+                    questions
                 });
                 stepIdx++;
             }
@@ -346,6 +369,25 @@ exports.analyzeSchedule = async (req, res) => {
             const distributedDates = distributeDates(targetDate, 3);
             const extractedTopics = extractSyllabusTopics(extractedText, customNeeds);
             
+            // Standard fallback questions
+            const fallbackQuestions = [
+                [
+                    "What are the foundational concepts of this topic?",
+                    "How do these basic principles apply in practice?",
+                    "Can you define all the core terminology introduced here?"
+                ],
+                [
+                    "What are the intermediate methods/structures discussed?",
+                    "How does this topic connect to the first module?",
+                    "What are the primary problem-solving patterns for this section?"
+                ],
+                [
+                    "What are the most common exam questions from this syllabus area?",
+                    "Can you summarize this entire unit from memory?",
+                    "How do you resolve edge cases or advanced problems in this topic?"
+                ]
+            ];
+
             const steps = [];
             // Step 1: Morning
             steps.push({
@@ -356,7 +398,8 @@ exports.analyzeSchedule = async (req, res) => {
                 eh: "11",
                 em: "00",
                 eap: "AM",
-                work: extractedTopics[0]
+                work: extractedTopics[0],
+                questions: fallbackQuestions[0]
             });
 
             // Step 2: Afternoon
@@ -368,7 +411,8 @@ exports.analyzeSchedule = async (req, res) => {
                 eh: "04",
                 em: "00",
                 eap: "PM",
-                work: extractedTopics[1]
+                work: extractedTopics[1],
+                questions: fallbackQuestions[1]
             });
 
             // Step 3: Evening/Night
@@ -380,7 +424,8 @@ exports.analyzeSchedule = async (req, res) => {
                 eh: "09",
                 em: "00",
                 eap: "PM",
-                work: extractedTopics[2]
+                work: extractedTopics[2],
+                questions: fallbackQuestions[2]
             });
 
             return res.json({

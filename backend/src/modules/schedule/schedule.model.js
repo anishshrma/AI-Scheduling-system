@@ -18,7 +18,8 @@ const scheduleSchema = new mongoose.Schema({
         em: String,
         eap: String,
         work: String,
-        completed: { type: Boolean, default: false }
+        completed: { type: Boolean, default: false },
+        questions: { type: [String], default: [] }
     }],
     user: {
         type: mongoose.Schema.Types.ObjectId,
