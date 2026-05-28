@@ -293,3 +293,83 @@ const extractLinks = (text) => {
     const regex = /(https?:\/\/[^\s]+)/g;
     return text.match(regex) || [];
 };
+
+// =========================
+// 📝 EMAIL SUMMARIZER
+// =========================
+exports.summarizeEmail = async (text) => {
+    try {
+        if (!text || !text.trim()) return "";
+        
+        // Truncate text for Flan-T5 token limits
+        const cleanText = text.slice(0, 1500);
+        const prompt = `Summarize this email in a short, crisp one-sentence description:\n\nEmail Content:\n${cleanText}`;
+
+        const response = await axios.post(
+            process.env.T5_API_URL,
+            { inputs: prompt },
+            {
+                timeout: 20000,
+                headers: {
+                    Authorization: `Bearer ${process.env.T5_API_KEY}`,
+                    "Content-Type": "application/json"
+                }
+            }
+        );
+
+        let output = "";
+        if (Array.isArray(response.data)) {
+            output = response.data?.[0]?.generated_text || "";
+        } else if (response.data?.generated_text) {
+            output = response.data.generated_text;
+        }
+
+        return output.trim();
+    } catch (err) {
+        console.error("❌ T5 SUMMARIZE ERROR:", err.response?.data || err.message);
+        return "";
+    }
+};
+
+// =========================
+// 🎯 KEY POINTS / ACTIONS EXTRACTION
+// =========================
+exports.extractImportantPoints = async (text) => {
+    try {
+        if (!text || !text.trim()) return [];
+
+        const cleanText = text.slice(0, 1500);
+        const prompt = `Extract 3 critical action items or key takeaways from this email as a plain text, newline-separated list:\n\nEmail Content:\n${cleanText}`;
+
+        const response = await axios.post(
+            process.env.T5_API_URL,
+            { inputs: prompt },
+            {
+                timeout: 20000,
+                headers: {
+                    Authorization: `Bearer ${process.env.T5_API_KEY}`,
+                    "Content-Type": "application/json"
+                }
+            }
+        );
+
+        let output = "";
+        if (Array.isArray(response.data)) {
+            output = response.data?.[0]?.generated_text || "";
+        } else if (response.data?.generated_text) {
+            output = response.data.generated_text;
+        }
+
+        // Split output by newlines and clean bullet points symbols
+        const points = output
+            .replace(/\r/g, "")
+            .split("\n")
+            .map(line => line.trim().replace(/^[\*\-•\d\.\s]+/, "").trim())
+            .filter(line => line.length > 5);
+
+        return points.slice(0, 4); // return top 3-4 points
+    } catch (err) {
+        console.error("❌ T5 KEY POINTS EXTRACTION ERROR:", err.response?.data || err.message);
+        return [];
+    }
+};

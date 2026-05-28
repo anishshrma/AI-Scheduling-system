@@ -122,3 +122,94 @@ exports.fetchEmails = async (authClient) => {
         return [];
     }
 };
+
+// =====================================
+// 📅 GOOGLE CALENDAR & OAUTH INTEGRATION
+// =====================================
+const User = require("../auth/auth.model");
+
+exports.getOAuthClient = async (userId) => {
+    try {
+        const user = await User.findById(userId);
+        if (!user || !user.googleRefreshToken) {
+            console.log("⚠️ getOAuthClient: User not found or Google Refresh Token not found for userId:", userId);
+            return null;
+        }
+
+        const oauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET,
+            process.env.GOOGLE_REDIRECT_URI
+        );
+
+        oauth2Client.setCredentials({
+            access_token: user.googleAccessToken,
+            refresh_token: user.googleRefreshToken,
+        });
+
+        // Listen for automatic token refresh events and save them in DB
+        oauth2Client.on("tokens", async (tokens) => {
+            console.log("🔄 Google Tokens Refreshed inside SDK!");
+            if (tokens.access_token) {
+                user.googleAccessToken = tokens.access_token;
+            }
+            if (tokens.refresh_token) {
+                user.googleRefreshToken = tokens.refresh_token;
+            }
+            await user.save();
+            console.log("💾 Saved updated OAuth tokens to DB.");
+        });
+
+        return oauth2Client;
+    } catch (err) {
+        console.error("❌ getOAuthClient error:", err.message);
+        return null;
+    }
+};
+
+exports.createCalendarEvent = async (userId, eventDetails) => {
+    try {
+        const authClient = await exports.getOAuthClient(userId);
+        if (!authClient) {
+            console.log("⚠️ Skipping calendar event: Google account not linked or error retrieving OAuth client");
+            return null;
+        }
+
+        const calendar = google.calendar({
+            version: "v3",
+            auth: authClient,
+        });
+
+        const event = {
+            summary: eventDetails.summary,
+            description: eventDetails.description || "",
+            start: {
+                dateTime: eventDetails.start,
+                timeZone: "Asia/Kolkata",
+            },
+            end: {
+                dateTime: eventDetails.end,
+                timeZone: "Asia/Kolkata",
+            },
+            reminders: {
+                useDefault: false,
+                overrides: [
+                    { method: "popup", minutes: 30 },
+                    { method: "email", minutes: 60 },
+                ],
+            },
+        };
+
+        console.log("📡 Creating Google Calendar Event for user:", userId, "-", event.summary);
+        const response = await calendar.events.insert({
+            calendarId: "primary",
+            resource: event,
+        });
+
+        console.log("✅ Google Calendar Event Created successfully:", response.data.htmlLink);
+        return response.data;
+    } catch (err) {
+        console.error("❌ Failed to create Google Calendar Event:", err.message);
+        return null;
+    }
+};

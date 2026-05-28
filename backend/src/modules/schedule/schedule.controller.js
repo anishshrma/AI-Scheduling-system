@@ -4,6 +4,7 @@ const Tesseract = require("tesseract.js");
 const axios = require("axios");
 const { extractDetails } = require("../../services/t5.service");
 const scheduleService = require("./schedule.service");
+const googleService = require("../google/google.service");
 
 // =====================================
 // 📅 INTELLIGENT DATE EXTRACTOR
@@ -396,6 +397,27 @@ exports.analyzeSchedule = async (req, res) => {
     }
 };
 
+// Helper to parse step start/end times into a Date object
+const parseStepTimeToDate = (dateStr, hStr, mStr, apStr) => {
+    if (!dateStr) return new Date();
+    const parts = dateStr.split("-");
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    let hours = parseInt(hStr, 10) || 9;
+    const minutes = parseInt(mStr, 10) || 0;
+    const isPM = apStr?.toUpperCase() === "PM";
+    const isAM = apStr?.toUpperCase() === "AM";
+
+    if (isPM && hours < 12) {
+        hours += 12;
+    } else if (isAM && hours === 12) {
+        hours = 0;
+    }
+
+    return new Date(year, month - 1, day, hours, minutes);
+};
+
 // CREATE
 exports.createSchedule = async (req, res) => {
     try {
@@ -403,6 +425,33 @@ exports.createSchedule = async (req, res) => {
             ...req.body,
             user: req.user.id
         });
+
+        // =====================================
+        // 📅 SYNC TO GOOGLE CALENDAR (BACKGROUND)
+        // =====================================
+        if (schedule.steps && schedule.steps.length > 0) {
+            (async () => {
+                try {
+                    console.log(`📡 Starting Google Calendar sync for ${schedule.steps.length} schedule steps`);
+                    for (let step of schedule.steps) {
+                        if (step.date) {
+                            const start = parseStepTimeToDate(step.date, step.sh, step.sm, step.sap);
+                            const end = parseStepTimeToDate(step.date, step.eh, step.em, step.eap);
+
+                            await googleService.createCalendarEvent(req.user.id, {
+                                summary: `Study Step: ${step.work || schedule.title}`,
+                                description: `From study schedule: ${schedule.title}\nDescription: ${schedule.description || "No description"}`,
+                                start: start.toISOString(),
+                                end: end.toISOString()
+                            });
+                        }
+                    }
+                } catch (calErr) {
+                    console.error("⚠️ Background Schedule Steps Calendar Sync Error:", calErr.message);
+                }
+            })();
+        }
+
         res.json({ success: true, schedule });
     } catch (err) {
         res.status(500).json({ error: err.message });

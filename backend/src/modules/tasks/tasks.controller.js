@@ -1,4 +1,5 @@
 const taskService = require('./tasks.service');
+const googleService = require("../google/google.service");
 
 // CREATE
 exports.createTask = async (req, res) => {
@@ -20,6 +21,29 @@ exports.createTask = async (req, res) => {
             ...req.body,
             user: userId
         });
+
+        // =====================================
+        // 📅 SYNC TO GOOGLE CALENDAR (BACKGROUND)
+        // =====================================
+        if (task.deadline) {
+            (async () => {
+                try {
+                    const start = new Date(task.deadline);
+                    const end = new Date(task.deadline);
+                    // Make it a 1-hour event ending at deadline
+                    start.setHours(start.getHours() - 1);
+
+                    await googleService.createCalendarEvent(userId, {
+                        summary: `Task Deadline: ${task.title}`,
+                        description: task.description || `Category: ${task.category}, Priority: ${task.priority}`,
+                        start: start.toISOString(),
+                        end: end.toISOString()
+                    });
+                } catch (calErr) {
+                    console.error("⚠️ Background Google Calendar Sync Error:", calErr.message);
+                }
+            })();
+        }
 
         res.json({ success: true, task });
 

@@ -14,6 +14,10 @@ const emailSchema = new mongoose.Schema({
     },
 
     summary: String,
+    importantPoints: {
+        type: [String],
+        default: []
+    },
 
     // =========================
     // 🔥 SYSTEM FIELDS

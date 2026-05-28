@@ -128,10 +128,12 @@ async function processEmailsInBackground(emails, userId) {
             }
 
             // =========================
-            // 🔥 ML + T5
+            // 🔥 ML + T5 + SUMMARIZER
             // =========================
             let category = "Other";
             let extracted = {};
+            let t5Summary = "";
+            let importantPoints = [];
 
             try {
                 console.log("🧠 ML RUNNING...");
@@ -143,10 +145,18 @@ async function processEmailsInBackground(emails, userId) {
 
                 console.log("📊 CATEGORY:", category);
 
-                console.log("🤖 T5 RUNNING...");
+                console.log("🤖 T5 DETAILS EXTRACTING...");
                 extracted = await t5Service.extractDetails(text, category);
 
-                console.log("🧾 T5:", extracted);
+                console.log("🧾 T5 DETAILS:", extracted);
+
+                console.log("🤖 T5 SUMMARIZER RUNNING...");
+                t5Summary = await t5Service.summarizeEmail(text);
+                console.log("📝 T5 SUMMARY:", t5Summary);
+
+                console.log("🤖 T5 KEY POINTS EXTRACTION RUNNING...");
+                importantPoints = await t5Service.extractImportantPoints(text);
+                console.log("📌 T5 KEY POINTS:", importantPoints);
 
             } catch (err) {
                 console.log("⚠️ AI FAILED:", err.message);
@@ -180,9 +190,9 @@ async function processEmailsInBackground(emails, userId) {
             // =========================
             // 🔥 SUMMARY
             // =========================
-            const summary = buildSummary(extracted, subject);
+            const summary = t5Summary || buildSummary(extracted, subject);
 
-            if (DEBUG) console.log("📝 SUMMARY:", summary);
+            if (DEBUG) console.log("📝 FINAL SUMMARY:", summary);
 
             // =========================
             // 🔥 SAVE EMAIL
@@ -191,6 +201,7 @@ async function processEmailsInBackground(emails, userId) {
                 subject,
                 category,
                 summary,
+                importantPoints,
                 messageId: email.id,
                 user: userId,
                 priority,
