@@ -192,7 +192,13 @@ const parseSyllabusIntoChapters = (ocrText) => {
         let subTopics = cleanContent
             .split(/[,;•]|\b\d+\.\s+/)
             .map(t => t.trim())
-            .filter(t => t.length > 10 && !/^(?:and|or|for|of|with|w\.r\.t)\b/i.test(t));
+            .filter(t => 
+                t.length > 10 && 
+                !/^(?:and|or|for|of|with|w\.r\.t)\b/i.test(t) &&
+                !/^c[o0]\d/i.test(t) &&
+                !/course\s*outcome/i.test(t) &&
+                !/at the end of the course/i.test(t)
+            );
 
         if (subTopics.length === 0) {
             subTopics = cleanContent.split(/[.!?]+/).map(t => t.trim()).filter(t => t.length > 10);
@@ -211,8 +217,17 @@ const parseSyllabusIntoChapters = (ocrText) => {
 
     if (cleanUnits.length === 0) {
         // RESILIENT OCR LINE EXTRACTOR FALLBACK
-        // If we couldn't find structural "Units", extract clean lines of text as topics
-        const cleanLines = lines.filter(l => l.length > 15 && l.length < 90 && !l.includes(":") && !l.includes("http") && !/^(?:textbook|reference|marks|course code|miet|syllabus for|page|s\. no\.)/i.test(l));
+        // If we couldn't find structural "Units", extract clean lines of text as topics, skipping Outcomes & Textbooks
+        const cleanLines = lines.filter(l => 
+            l.length > 15 && 
+            l.length < 90 && 
+            !l.includes(":") && 
+            !l.includes("http") && 
+            !/^c[o0]\d/i.test(l) &&
+            !/course\s*outcome/i.test(l) &&
+            !/at the end of the course/i.test(l) &&
+            !/^(?:textbook|reference|marks|course code|miet|syllabus for|page|s\. no\.)/i.test(l)
+        );
 
         if (cleanLines.length >= 3) {
             return [{
