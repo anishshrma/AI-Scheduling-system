@@ -120,6 +120,7 @@ const romanToDecimal = (roman) => {
 
 const parseSyllabusIntoChapters = (ocrText) => {
     if (!ocrText) return [];
+    
     const lines = ocrText
         .replace(/\r/g, "")
         .split("\n")
@@ -128,15 +129,28 @@ const parseSyllabusIntoChapters = (ocrText) => {
 
     const units = [];
     let currentUnit = null;
+    let inDetailedSyllabus = false;
 
     // Matches "Unit 1", "Chapter I", "Module 2", "Section A", etc. with optional leading whitespace/chars or common OCR typos like "Unlt"
-    const unitRegex = /(?:^|\s|•)(?:un[i|l|t|o|e\-\s]+t?|chapter|module|section)\s*(\d+|[ivx]+)\b[:.-]?\s*(.*)/i;
+    const unitRegex = /(?:^|\s|•)(?:un[i|l|t|o|e\-\s]+t?|chapter|module|section|ch|ut)\s*(\d+|[ivx]+)\b[:.-]?\s*(.*)/i;
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
+        
+        // Activate "Detailed Syllabus" mode once we pass the course outcomes table
+        if (/detailed\s*syllabus|section\s*[-A-Z]/i.test(line)) {
+            inDetailedSyllabus = true;
+        }
+
+        // Skip obvious outcome table cells or codes like CO1, C02, etc.
+        if (/^c[o0]\d/i.test(line) || /course\s*outcome/i.test(line) || /at the end of the course/i.test(line)) {
+            continue;
+        }
+
         const match = line.match(unitRegex);
 
-        if (match) {
+        // Only match units if we are in the detailed syllabus or if we don't see outcomes in the syllabus at all
+        if (match && (inDetailedSyllabus || !/course\s*outcome/i.test(ocrText.toLowerCase()))) {
             if (currentUnit) {
                 units.push(currentUnit);
             }
