@@ -129,8 +129,8 @@ const parseSyllabusIntoChapters = (ocrText) => {
     const units = [];
     let currentUnit = null;
 
-    // Matches "Unit 1", "Chapter I", "Module 2", "Section A", etc.
-    const unitRegex = /^(?:unit|chapter|module|section)\s*(\d+|[ivx]+)\b[:.-]?\s*(.*)/i;
+    // Matches "Unit 1", "Chapter I", "Module 2", "Section A", etc. with optional leading whitespace/chars or common OCR typos like "Unlt"
+    const unitRegex = /(?:^|\s|•)(?:un[i|l|t|o|e\-\s]+t?|chapter|module|section)\s*(\d+|[ivx]+)\b[:.-]?\s*(.*)/i;
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -171,7 +171,7 @@ const parseSyllabusIntoChapters = (ocrText) => {
     }
 
     // Clean units and split into sub-topics
-    return units.map(unit => {
+    const cleanUnits = units.map(unit => {
         const fullContent = [unit.title, ...unit.contentLines].join(" ");
         const cleanContent = fullContent.replace(/\(\s*\d+\s*(?:hrs|hours|hours\.)\s*\)/i, "").trim();
         
@@ -194,6 +194,23 @@ const parseSyllabusIntoChapters = (ocrText) => {
             subTopics: subTopics.slice(0, 6)
         };
     });
+
+    if (cleanUnits.length === 0) {
+        // RESILIENT OCR LINE EXTRACTOR FALLBACK
+        // If we couldn't find structural "Units", extract clean lines of text as topics
+        const cleanLines = lines.filter(l => l.length > 15 && l.length < 90 && !l.includes(":") && !l.includes("http") && !/^(?:textbook|reference|marks|course code|miet|syllabus for|page|s\. no\.)/i.test(l));
+
+        if (cleanLines.length >= 3) {
+            return [{
+                num: 1,
+                title: "Core Syllabus Topics",
+                fullText: ocrText,
+                subTopics: cleanLines.slice(0, 6)
+            }];
+        }
+    }
+
+    return cleanUnits;
 };
 
 const detectRequestedUnits = (customNeeds, availableUnits) => {
